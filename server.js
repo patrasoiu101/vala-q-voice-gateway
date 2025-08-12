@@ -4,38 +4,39 @@ import { WebSocketServer } from "ws";
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Healthcheck route
+// Healthcheck
 app.get("/", (_req, res) => res.send("Voice Gateway is live"));
 
-// WebSocket server for Twilio Media Streams
-const wss = new WebSocketServer({ noServer: true });
+// Accept Twilio's required subprotocol "audio"
+const wss = new WebSocketServer({
+  noServer: true,
+  handleProtocols: (protocols) => {
+    if (Array.isArray(protocols) && protocols.includes("audio")) return "audio";
+    return false; // reject if "audio" not offered
+  },
+});
 
 wss.on("connection", async (twilioWS, req) => {
-  const search = new URL(req.url, "http://gateway.local").searchParams;
-  const leadId = search.get("leadId") || "unknown";
-
-  console.log("✅ Twilio stream connected", { leadId });
+  const leadId = new URL(req.url, "http://gw").searchParams.get("leadId") || "unknown";
+  console.log("✅ Twilio stream connected", { leadId, protocol: twilioWS.protocol });
 
   twilioWS.on("message", (msg) => {
     try {
-      const data = JSON.parse(msg.toString());
-
-      switch (data.event) {
+      const evt = JSON.parse(msg.toString());
+      switch (evt.event) {
         case "start":
-          console.log(`📞 Call started: ${data.start.callSid}`);
+          console.log(`📞 Call started: ${evt.start.callSid}`);
+          console.log("  -> media format:", evt.start.mediaFormat);
           break;
-
         case "media":
-          // data.media.payload is base64-encoded PCM audio from Twilio
-          // In the next step we will forward this to OpenAI Realtime.
+          // evt.media.payload is base64 PCM µ-law 8k
+          // (Next step: forward to OpenAI Realtime)
           break;
-
         case "stop":
           console.log("🛑 Call ended");
           break;
-
         default:
-          // other Twilio events: "mark", etc.
+          // mark, ping, etc.
           break;
       }
     } catch (e) {
@@ -43,19 +44,25 @@ wss.on("connection", async (twilioWS, req) => {
     }
   });
 
-  twilioWS.on("close", () => {
-    console.log("❎ Twilio stream closed");
+  twilioWS.on("close", (code, reason) => {
+    console.log("❎ Twilio stream closed", code, reason?.toString());
+  });
+
+  twilioWS.on("error", (err) => {
+    console.error("WS error:", err);
   });
 });
 
 // Upgrade HTTP → WS for /stream
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Voice Gateway listening on ${PORT}`);
-});
-
+const server = app.listen(PORT, () => console.log(`🚀 Voice Gateway listening on ${PORT}`));
 server.on("upgrade", (req, socket, head) => {
   if (req.url.startsWith("/stream")) {
+    // Log the subprotocol Twilio is requesting
+    const protoHeader = req.headers["sec-websocket-protocol"];
+    console.log("Upgrade requested with subprotocol(s):", protoHeader);
+
     wss.handleUpgrade(req, socket, head, (ws) => {
+      console.log("WS upgraded. Agreed subprotocol:", ws.protocol);
       wss.emit("connection", ws, req);
     });
   } else {
