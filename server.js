@@ -35,13 +35,15 @@ wss.on("connection", async (twilioWS, req) => {
   console.log("✅ Twilio stream connected", { leadId, protocol: twilioWS.protocol });
 
   // ---- OpenAI Realtime WS
-  const oa = new WebSocket(
-    // Realtime WS endpoint; pick your latest realtime model
-    "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
-    {
-      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
-    }
-  );
+const oa = new WebSocket(
+  "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "OpenAI-Beta": "realtime=v1",
+    },
+  }
+);
 
   let speaking = false;          // whether the agent is currently speaking
   let openaiReady = false;       // session open
