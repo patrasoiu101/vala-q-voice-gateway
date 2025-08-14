@@ -230,3 +230,17 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
   }
 });
+
+server.on("upgrade", (req, socket, head) => {
+  console.log("HTTP upgrade requested for path:", req.url);
+  if (req.url.startsWith("/stream")) {
+    const protoHeader = req.headers["sec-websocket-protocol"];
+    console.log("Upgrade requested with subprotocol(s):", protoHeader);
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      console.log("WS upgraded. Agreed subprotocol:", ws.protocol);
+      wss.emit("connection", ws, req);
+    });
+  } else {
+    socket.destroy();
+  }
+});
